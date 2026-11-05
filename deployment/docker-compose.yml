@@ -1,0 +1,86 @@
+﻿version: '3.8'
+
+networks:
+  gateway_net:
+    name: gateway_net
+    driver: bridge
+  monitoring_net:
+    name: monitoring_net
+    driver: bridge
+
+volumes:
+  npm_data:
+  npm_letsencrypt:
+  uptime_kuma_data:
+  prometheus_data:
+  grafana_data:
+
+services:
+  # ----------------------------------------------------------------
+  # Edge Reverse Proxy
+  # ----------------------------------------------------------------
+  nginx-proxy-manager:
+    image: 'jc21/nginx-proxy-manager:latest'
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '81:81'
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    networks:
+      - gateway_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:81"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ----------------------------------------------------------------
+  # SLA & Status Monitoring
+  # ----------------------------------------------------------------
+  uptime-kuma:
+    image: 'louislam/uptime-kuma:latest'
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma_data:/app/data
+    ports:
+      - '3001:3001'
+    networks:
+      - gateway_net
+      - monitoring_net
+
+  # ----------------------------------------------------------------
+  # Prometheus Telemetry Collector
+  # ----------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - '9090:9090'
+    networks:
+      - monitoring_net
+
+  # ----------------------------------------------------------------
+  # Grafana Dashboards
+  # ----------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - monitoring_net
